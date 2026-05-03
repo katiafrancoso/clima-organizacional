@@ -749,6 +749,39 @@ function exportPDF(analysis, meta) {
     y+=blockH+5;
   }
 
+  // ── INTERPRETAÇÃO ──
+  newPage();
+  doc.setFillColor(...cBlue);doc.rect(ml,y,cw,9,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(255,255,255);
+  doc.text('INTERPRETAÇÃO DOS RESULTADOS',ml+5,y+6.5);
+  y+=14;
+
+  for (const cat of analysis.categories) {
+    const dom = getDominant(cat);
+    const interp = INTERP[cat.name]?.[dom]||'';
+    const total = cat.total||1;
+    const stTxtFull={v:'✅ Favorável',a:'⚠️ Atenção',r:'🚨 Crítico'};
+    const domRgb={v:cV,a:cA,r:cR}[dom];
+    const lines = doc.splitTextToSize(interp, cw-16);
+    chk(18+lines.length*5);
+
+    doc.setFillColor(250,252,255);doc.setDrawColor(215,225,240);doc.setLineWidth(0.3);
+    doc.roundedRect(ml,y,cw,14+lines.length*5,3,3,'FD');
+    doc.setFillColor(...domRgb);doc.roundedRect(ml,y,3,14+lines.length*5,1.5,1.5,'F');
+
+    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(...domRgb);
+    doc.text(`• ${cat.name}`,ml+7,y+7);
+    doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(55,65,80);
+    doc.text(lines,ml+7,y+13);
+
+    const statsY = y+13+lines.length*5;
+    doc.setFontSize(7.5);
+    doc.setTextColor(...cV);doc.text(`Verde: ${cat.verde}(${pct(cat.verde,total)}%)`,ml+7,statsY);
+    doc.setTextColor(...cA);doc.text(`Amarelo: ${cat.amarelo}(${pct(cat.amarelo,total)}%)`,ml+55,statsY);
+    doc.setTextColor(...cR);doc.text(`Vermelho: ${cat.vermelho}(${pct(cat.vermelho,total)}%)`,ml+108,statsY);
+    y+=18+lines.length*5;
+  }
+
   doc.save(`Relatorio_Clima_${(meta.company||'Empresa').replace(/\s+/g,'_')}.pdf`);
 }
 
