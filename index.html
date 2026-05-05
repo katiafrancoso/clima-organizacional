@@ -503,71 +503,211 @@ function processRows(rows) {
 // ═══════════════════════════════════════════════════
 async function exportWord(analysis, meta) {
   const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,
-    AlignmentType,WidthType,ShadingType} = docx;
-  const stTxt={v:'✅ Favorável',a:'⚠️ Atenção',r:'🚨 Crítico'};
-  const stClr={v:'00B050',a:'FFC000',r:'FF0000'};
+    AlignmentType,WidthType,ShadingType,BorderStyle,
+    HeadingLevel,PageBreak,TabStopPosition,TabStopType} = docx;
 
-  function mkCell(text,bg,bold,color,align) {
+  const noBorder = {style:BorderStyle.NONE,size:0,color:'FFFFFF'};
+  const noBorders = {top:noBorder,bottom:noBorder,left:noBorder,right:noBorder};
+  const thinBorder = {style:BorderStyle.SINGLE,size:4,color:'D0D8E8'};
+  const thinBorders = {top:thinBorder,bottom:thinBorder,left:thinBorder,right:thinBorder};
+
+  const sp  = (sz=200) => new Paragraph({spacing:{before:sz,after:0},children:[new TextRun('')]});
+  const colHex = {v:'00A846',a:'D4900A',r:'C83232'};
+  const colBg  = {v:'E6F9ED',a:'FFF8DC',r:'FDE8E8'};
+  const stLabel= {v:'FAVORÁVEL',a:'ATENÇÃO',r:'CRÍTICO'};
+
+  const CAT_STRUCTURE = {
+    'AO':[{label:'ALTA',c:'r'},{label:'MÉDIA',c:'a'},{label:'BAIXA',c:'v'}],
+    'AP':[{label:'BAIXO',c:'r'},{label:'MÉDIO',c:'a'},{label:'ALTO',c:'v'}],
+    'AQ':[{label:'BAIXO',c:'r'},{label:'MÉDIO',c:'a'},{label:'ALTO',c:'v'}],
+    'AR':[{label:'BAIXO',c:'r'},{label:'MÉDIO',c:'a'},{label:'ALTO',c:'v'}],
+    'AS':[{label:'BAIXA',c:'v'},{label:'MÉDIA',c:'a'},{label:'ALTA',c:'r'}],
+    'AT':[{label:'BAIXA',c:'r'},{label:'MÉDIO',c:'a'},{label:'ALTA',c:'v'}],
+    'AU':[{label:'BAIXA',c:'r'},{label:'MÉDIO',c:'a'},{label:'ALTA',c:'v'}],
+  };
+
+  function hCell(text, bg='1F497D', color='FFFFFF', w) {
     return new TableCell({
-      shading:bg?{fill:bg,type:ShadingType.CLEAR,color:'auto'}:undefined,
-      margins:{top:80,bottom:80,left:120,right:120},
-      children:[new Paragraph({alignment:align||AlignmentType.LEFT,
-        children:[new TextRun({text:String(text||''),bold:!!bold,size:20,color:color||'000000'})]})]
+      width: w ? {size:w,type:WidthType.PERCENTAGE} : undefined,
+      shading:{fill:bg,type:ShadingType.CLEAR,color:'auto'},
+      borders: thinBorders,
+      margins:{top:80,bottom:80,left:160,right:160},
+      children:[new Paragraph({alignment:AlignmentType.CENTER,
+        children:[new TextRun({text:String(text||''),bold:true,size:20,color})]})]
     });
   }
-  const sp = () => new Paragraph({children:[new TextRun('')]});
+  function dCell(text, bg, color='333333', align, bold=false) {
+    return new TableCell({
+      shading: bg ? {fill:bg,type:ShadingType.CLEAR,color:'auto'} : undefined,
+      borders: thinBorders,
+      margins:{top:80,bottom:80,left:160,right:160},
+      children:[new Paragraph({alignment:align||AlignmentType.CENTER,
+        children:[new TextRun({text:String(text||''),bold,size:20,color})]})]
+    });
+  }
+  function infoCell(text, bg, bold=false, color='222222') {
+    return new TableCell({
+      shading:bg?{fill:bg,type:ShadingType.CLEAR,color:'auto'}:undefined,
+      borders:thinBorders,
+      margins:{top:100,bottom:100,left:200,right:200},
+      children:[new Paragraph({children:[new TextRun({text:String(text||''),bold,size:22,color})]})]
+    });
+  }
 
-  const infoRows = [
-    ['Empresa',meta.company],['Setor',meta.sector||'—'],
-    ['Responsável',meta.responsible||'—'],
-    ['Nº de Avaliados',String(meta.employees||analysis.totalRows)]
-  ].map(([l,v]) => new TableRow({children:[mkCell(l,'D6E4F0',true),mkCell(v)]}));
+  const children = [];
 
-  const resRows = [
-    new TableRow({children:['Categoria','Verde','Amarelo','Vermelho','Status'].map(h=>
-      mkCell(h,'1F497D',true,'FFFFFF',AlignmentType.CENTER))}),
-    ...analysis.categories.map(cat => {
-      const dom=getDominant(cat); const t=cat.total||1;
-      return new TableRow({children:[
-        mkCell(cat.name,'',true),
-        mkCell(`${cat.verde} (${pct(cat.verde,t)}%)`,dom==='v'?'E2EFDA':'',false,'000000',AlignmentType.CENTER),
-        mkCell(`${cat.amarelo} (${pct(cat.amarelo,t)}%)`,dom==='a'?'FFF2CC':'',false,'000000',AlignmentType.CENTER),
-        mkCell(`${cat.vermelho} (${pct(cat.vermelho,t)}%)`,dom==='r'?'FFDEDE':'',false,'000000',AlignmentType.CENTER),
-        mkCell(stTxt[dom],'',true,stClr[dom],AlignmentType.CENTER),
-      ]});
-    })
+  // ══════════════════════════════════════
+  // CAPA
+  // ══════════════════════════════════════
+  children.push(sp(800));
+  children.push(new Paragraph({
+    alignment:AlignmentType.CENTER,
+    shading:{fill:'1F497D',type:ShadingType.CLEAR,color:'auto'},
+    spacing:{before:240,after:0},
+    children:[new TextRun({text:'  RELATÓRIO DE ANÁLISE DE CLIMA ORGANIZACIONAL  ',
+      bold:true,size:52,color:'FFFFFF'})]
+  }));
+  children.push(new Paragraph({
+    alignment:AlignmentType.CENTER,
+    shading:{fill:'1F497D',type:ShadingType.CLEAR,color:'auto'},
+    spacing:{before:0,after:240},
+    children:[new TextRun({text:'  Análise de Fatores Psicossociais do Trabalho  ',
+      size:24,color:'BDD6F0'})]
+  }));
+  children.push(sp(400));
+
+  // Company info table
+  const infoData = [
+    ['Empresa', meta.company],
+    ['Setor', meta.sector||'—'],
+    ['Responsável', meta.responsible||'—'],
+    ['Nº de Avaliados', String(meta.employees||analysis.totalRows)],
   ];
+  children.push(new Table({
+    width:{size:100,type:WidthType.PERCENTAGE},
+    rows: infoData.map(([l,v]) => new TableRow({children:[
+      infoCell(l,'D6E4F0',true,'1F497D'),
+      infoCell(v,'F5F8FF',false,'222222'),
+    ]}))
+  }));
 
-  const d = new Document({sections:[{children:[
-    sp(),sp(),
-    new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'RELATÓRIO DE ANÁLISE DE CLIMA ORGANIZACIONAL',bold:true,size:44,color:'1F497D'})]}),
-    sp(),
-    new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:'Modelo Demanda-Controle-Apoio (DCA)',size:26,color:'555555'})]}),
-    sp(),sp(),
-    new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:infoRows}),
-    sp(),
-    new Paragraph({pageBreakBefore:true,children:[new TextRun('')]}),
-    new Paragraph({children:[new TextRun({text:'Resultados por Categoria',bold:true,size:32,color:'1F497D'})]}),
-    sp(),
-    new Paragraph({children:[new TextRun({text:`Total de respondentes: ${analysis.totalRows}`,size:22,color:'444444'})]}),
-    sp(),
-    new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:resRows}),
-    sp(),
-    new Paragraph({pageBreakBefore:true,children:[new TextRun('')]}),
-    new Paragraph({children:[new TextRun({text:'Interpretação dos Resultados',bold:true,size:32,color:'1F497D'})]}),
-    sp(),
-    ...analysis.categories.flatMap(cat => {
-      const dom=getDominant(cat); const t=cat.total||1;
-      const interp=INTERP[cat.name]?.[dom]||'';
-      return [
-        new Paragraph({children:[new TextRun({text:`• ${cat.name} — Média: ${cat.avgScore.toFixed(2)}`,bold:true,size:22,color:stClr[dom]})]}),
-        new Paragraph({children:[new TextRun({text:interp,size:20,color:'333333'})]}),
-        new Paragraph({children:[new TextRun({text:`Verde: ${cat.verde}(${pct(cat.verde,t)}%) | Amarelo: ${cat.amarelo}(${pct(cat.amarelo,t)}%) | Vermelho: ${cat.vermelho}(${pct(cat.vermelho,t)}%)`,size:18,color:'888888'})]}),
-        sp(),
-      ];
-    }),
-  ]}]});
+  children.push(sp(600));
+  children.push(new Paragraph({
+    alignment:AlignmentType.CENTER,
+    children:[new TextRun({text:`Total de respondentes analisados: ${analysis.totalRows}`,
+      size:22,color:'666666'})]
+  }));
 
+  // ══════════════════════════════════════
+  // RESULTADOS — page break
+  // ══════════════════════════════════════
+  children.push(new Paragraph({
+    children:[new PageBreak()],
+  }));
+
+  // Section title
+  children.push(new Paragraph({
+    shading:{fill:'1F497D',type:ShadingType.CLEAR,color:'auto'},
+    spacing:{before:0,after:200},
+    children:[new TextRun({text:'  RESULTADOS POR CATEGORIA',bold:true,size:32,color:'FFFFFF'})]
+  }));
+
+  for (const cat of analysis.categories) {
+    const struct = CAT_STRUCTURE[cat.col]||[];
+    const total  = cat.total||1;
+    const dom    = getDominant(cat);
+    const domHex = colHex[dom];
+    const domBg  = colBg[dom];
+
+    const levels = struct.map(s => {
+      const count = s.c==='v'?cat.verde:s.c==='a'?cat.amarelo:cat.vermelho;
+      return {...s, count, pctVal: pct(count,total)};
+    });
+
+    children.push(sp(160));
+
+    // Category header bar
+    children.push(new Paragraph({
+      shading:{fill:domBg,type:ShadingType.CLEAR,color:'auto'},
+      spacing:{before:0,after:0},
+      border:{left:{style:BorderStyle.THICK,size:24,color:domHex}},
+      children:[
+        new TextRun({text:`  ${cat.name.toUpperCase()}`,bold:true,size:26,color:domHex}),
+        new TextRun({text:`    •  ${stLabel[dom]}  •  Média: ${cat.avgScore.toFixed(2)}`,size:20,color:'888888'}),
+      ]
+    }));
+
+    children.push(sp(80));
+
+    // Results table
+    children.push(new Table({
+      width:{size:100,type:WidthType.PERCENTAGE},
+      rows:[
+        // Header
+        new TableRow({children:[
+          hCell('NÍVEL','1F497D','FFFFFF',40),
+          hCell('Nº DE RESPOSTAS','1F497D','FFFFFF',30),
+          hCell('PERCENTAGEM','1F497D','FFFFFF',30),
+        ]}),
+        // Data rows
+        ...levels.map(lv => new TableRow({children:[
+          dCell(lv.label, colBg[lv.c], colHex[lv.c], AlignmentType.LEFT, true),
+          dCell(String(lv.count), 'F9FAFB', '333333'),
+          dCell(`${lv.pctVal}%`, 'F9FAFB', colHex[lv.c], AlignmentType.CENTER, true),
+        ]})),
+        // Total row
+        new TableRow({children:[
+          dCell('TOTAL','E8EEF8','1F497D',AlignmentType.LEFT,true),
+          dCell(String(total),'E8EEF8','1F497D'),
+          dCell('100%','E8EEF8','1F497D',AlignmentType.CENTER,true),
+        ]}),
+      ]
+    }));
+  }
+
+  // ══════════════════════════════════════
+  // INTERPRETAÇÃO — page break
+  // ══════════════════════════════════════
+  children.push(new Paragraph({children:[new PageBreak()]}));
+  children.push(new Paragraph({
+    shading:{fill:'1F497D',type:ShadingType.CLEAR,color:'auto'},
+    spacing:{before:0,after:200},
+    children:[new TextRun({text:'  INTERPRETAÇÃO DOS RESULTADOS',bold:true,size:32,color:'FFFFFF'})]
+  }));
+
+  for (const cat of analysis.categories) {
+    const dom   = getDominant(cat);
+    const domHex= colHex[dom];
+    const domBg = colBg[dom];
+    const interp= INTERP[cat.name]?.[dom]||'';
+    const total = cat.total||1;
+
+    children.push(sp(160));
+    children.push(new Paragraph({
+      shading:{fill:domBg,type:ShadingType.CLEAR,color:'auto'},
+      spacing:{before:0,after:0},
+      border:{left:{style:BorderStyle.THICK,size:24,color:domHex}},
+      children:[new TextRun({text:`  • ${cat.name}`,bold:true,size:24,color:domHex})]
+    }));
+    children.push(new Paragraph({
+      shading:{fill:'F9FAFB',type:ShadingType.CLEAR,color:'auto'},
+      spacing:{before:0,after:0},
+      border:{left:{style:BorderStyle.THICK,size:24,color:domHex}},
+      children:[new TextRun({text:`  ${interp}`,size:20,color:'333333'})]
+    }));
+    children.push(new Paragraph({
+      shading:{fill:'F9FAFB',type:ShadingType.CLEAR,color:'auto'},
+      spacing:{before:0,after:0},
+      border:{left:{style:BorderStyle.THICK,size:24,color:domHex}},
+      children:[
+        new TextRun({text:`  Verde: ${cat.verde} (${pct(cat.verde,total)}%)`,size:18,color:'00A846'}),
+        new TextRun({text:`   Amarelo: ${cat.amarelo} (${pct(cat.amarelo,total)}%)`,size:18,color:'D4900A'}),
+        new TextRun({text:`   Vermelho: ${cat.vermelho} (${pct(cat.vermelho,total)}%)`,size:18,color:'C83232'}),
+      ]
+    }));
+  }
+
+  const d = new Document({sections:[{children}]});
   const blob = await Packer.toBlob(d);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -797,94 +937,97 @@ function exportPDF(analysis, meta) {
 // ═══════════════════════════════════════════════════
 async function exportWordComments(comments, meta) {
   const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,
-    AlignmentType,WidthType,ShadingType,BorderStyle} = docx;
+    AlignmentType,WidthType,ShadingType,BorderStyle,PageBreak} = docx;
 
-  const sp = () => new Paragraph({children:[new TextRun('')]});
-  const noBorder = {style:BorderStyle.NONE,size:0,color:'FFFFFF'};
-  const noBorders = {top:noBorder,bottom:noBorder,left:noBorder,right:noBorder};
+  const thinBorder = {style:BorderStyle.SINGLE,size:4,color:'D0D8E8'};
+  const thinBorders = {top:thinBorder,bottom:thinBorder,left:thinBorder,right:thinBorder};
+  const sp = (sz=200) => new Paragraph({spacing:{before:sz,after:0},children:[new TextRun('')]});
 
-  function mkCell(text,bg,bold,color,align,size) {
+  function infoCell(text, bg, bold=false, color='222222') {
     return new TableCell({
       shading:bg?{fill:bg,type:ShadingType.CLEAR,color:'auto'}:undefined,
-      borders:noBorders,
-      margins:{top:80,bottom:80,left:120,right:120},
-      children:[new Paragraph({alignment:align||AlignmentType.LEFT,
-        children:[new TextRun({text:String(text||''),bold:!!bold,size:size||20,color:color||'333333'})]})]
+      borders:thinBorders,
+      margins:{top:100,bottom:100,left:200,right:200},
+      children:[new Paragraph({children:[new TextRun({text:String(text||''),bold,size:22,color})]})]
     });
   }
 
-  const children = [
-    sp(),
-    new Paragraph({alignment:AlignmentType.CENTER, children:[
-      new TextRun({text:'DEPOIMENTOS E COMENTÁRIOS',bold:true,size:44,color:'1F497D'})
-    ]}),
-    sp(),
-    new Paragraph({alignment:AlignmentType.CENTER, children:[
-      new TextRun({text:'Relato dos colaboradores — respostas abertas',size:22,color:'888888'})
-    ]}),
-    sp(),sp(),
-    new Table({width:{size:100,type:WidthType.PERCENTAGE},rows:[
-      new TableRow({children:[mkCell('Empresa','D6E4F0',true),mkCell(meta.company,'',false)]}),
-      new TableRow({children:[mkCell('Setor','D6E4F0',true),mkCell(meta.sector||'—','',false)]}),
-      new TableRow({children:[mkCell('Responsável','D6E4F0',true),mkCell(meta.responsible||'—','',false)]}),
-      new TableRow({children:[mkCell('Total de respondentes','D6E4F0',true),mkCell(String(meta.employees||'—'),'',false)]}),
-    ]}),
-    sp(),sp(),
-  ];
+  const children = [];
 
-  // Column AP comments
-  const apComments = comments.filter(c => c.ap && c.ap.trim());
-  // Column AQ comments
-  const aqComments = comments.filter(c => c.aq && c.aq.trim());
+  // CAPA
+  children.push(sp(800));
+  children.push(new Paragraph({
+    alignment:AlignmentType.CENTER,
+    shading:{fill:'1F497D',type:ShadingType.CLEAR,color:'auto'},
+    spacing:{before:240,after:0},
+    children:[new TextRun({text:'  DEPOIMENTOS E COMENTÁRIOS  ',bold:true,size:52,color:'FFFFFF'})]
+  }));
+  children.push(new Paragraph({
+    alignment:AlignmentType.CENTER,
+    shading:{fill:'1F497D',type:ShadingType.CLEAR,color:'auto'},
+    spacing:{before:0,after:240},
+    children:[new TextRun({text:'  Respostas abertas dos colaboradores  ',size:24,color:'BDD6F0'})]
+  }));
+  children.push(sp(400));
 
-  function addSection(title, color, items, colLabel) {
-    if (items.length === 0) return;
+  children.push(new Table({
+    width:{size:100,type:WidthType.PERCENTAGE},
+    rows:[
+      new TableRow({children:[infoCell('Empresa','D6E4F0',true,'1F497D'),infoCell(meta.company,'F5F8FF')]}),
+      new TableRow({children:[infoCell('Setor','D6E4F0',true,'1F497D'),infoCell(meta.sector||'—','F5F8FF')]}),
+      new TableRow({children:[infoCell('Responsável','D6E4F0',true,'1F497D'),infoCell(meta.responsible||'—','F5F8FF')]}),
+      new TableRow({children:[infoCell('Nº de Avaliados','D6E4F0',true,'1F497D'),infoCell(String(meta.employees||'—'),'F5F8FF')]}),
+    ]
+  }));
+
+  // Build comment sections
+  const apList = comments.filter(c=>c.ap&&c.ap.trim());
+  const aqList = comments.filter(c=>c.aq&&c.aq.trim());
+
+  function addSection(title, color, list, field) {
+    children.push(new Paragraph({children:[new PageBreak()]}));
     children.push(new Paragraph({
-      children:[new TextRun({text:title,bold:true,size:28,color:color})]
+      shading:{fill:color,type:ShadingType.CLEAR,color:'auto'},
+      spacing:{before:0,after:200},
+      children:[new TextRun({text:`  ${title}`,bold:true,size:32,color:'FFFFFF'})]
     }));
     children.push(new Paragraph({
-      children:[new TextRun({text:`${items.length} comentário(s) registrado(s)`,size:18,color:'888888'})]
+      spacing:{before:0,after:160},
+      children:[new TextRun({text:`${list.length} comentário(s) registrado(s)`,size:20,color:'888888',italics:true})]
     }));
-    children.push(sp());
 
-    items.forEach((item, i) => {
-      // Numbered comment box
-      children.push(new Table({
-        width:{size:100,type:WidthType.PERCENTAGE},
-        rows:[
-          new TableRow({children:[
-            new TableCell({
-              shading:{fill:'F0F4FA',type:ShadingType.CLEAR,color:'auto'},
-              borders:{
-                top:{style:BorderStyle.SINGLE,size:2,color:'1F497D'},
-                bottom:{style:BorderStyle.NONE,size:0,color:'FFFFFF'},
-                left:{style:BorderStyle.THICK,size:8,color:color},
-                right:{style:BorderStyle.NONE,size:0,color:'FFFFFF'},
-              },
-              margins:{top:120,bottom:120,left:180,right:180},
-              children:[
-                new Paragraph({children:[new TextRun({text:`Respondente ${i+1}`,bold:true,size:18,color:'888888'})]}),
-                new Paragraph({children:[new TextRun({text:item[colLabel]||'',size:22,color:'222222'})]}),
-              ]
-            })
-          ]})
-        ]
+    if (list.length === 0) {
+      children.push(new Paragraph({
+        alignment:AlignmentType.CENTER,
+        children:[new TextRun({text:'Nenhum comentário registrado nesta coluna.',size:22,color:'AAAAAA',italics:true})]
       }));
-      children.push(sp());
+      return;
+    }
+
+    list.forEach((item, i) => {
+      children.push(sp(120));
+      // Number badge row
+      children.push(new Paragraph({
+        shading:{fill:'E8EEF8',type:ShadingType.CLEAR,color:'auto'},
+        spacing:{before:0,after:0},
+        border:{left:{style:BorderStyle.THICK,size:24,color}},
+        children:[new TextRun({text:`  Respondente ${i+1}`,bold:true,size:20,color:'555555'})]
+      }));
+      // Comment text
+      children.push(new Paragraph({
+        shading:{fill:'FAFBFE',type:ShadingType.CLEAR,color:'auto'},
+        spacing:{before:0,after:0},
+        border:{left:{style:BorderStyle.THICK,size:24,color}},
+        children:[new TextRun({text:`  "${item[field]}"`,size:22,color:'222222',italics:true})]
+      }));
     });
-    children.push(sp());
   }
 
-  addSection('📝 Comentários — Coluna AP', '1F497D', apComments, 'ap');
-  addSection('💬 Comentários — Coluna AQ', '2E7D32', aqComments, 'aq');
+  addSection('COMENTÁRIOS — COLUNA AP', '1F497D', apList, 'ap');
+  addSection('COMENTÁRIOS — COLUNA AQ', '2E5E2E', aqList, 'aq');
 
-  if (apComments.length === 0 && aqComments.length === 0) {
-    children.push(new Paragraph({alignment:AlignmentType.CENTER,
-      children:[new TextRun({text:'Nenhum comentário foi registrado nesta pesquisa.',size:22,color:'888888',italics:true})]}));
-  }
-
-  const doc = new Document({sections:[{children}]});
-  const blob = await Packer.toBlob(doc);
+  const d = new Document({sections:[{children}]});
+  const blob = await Packer.toBlob(d);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `Depoimentos_${(meta.company||'Empresa').replace(/\s+/g,'_')}.docx`;
